@@ -132,10 +132,27 @@ with col1:
         predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types, model)
         st.info(message)
         if predicted_df is not None:
-            display_df = predicted_df.copy()
-            format_dict = {col: '{:.2f}' for col in nutrient_types}
+            # Original wide display (commented out or removed)
+            # display_df = predicted_df.copy()
+            # format_dict = {col: '{:.2f}' for col in nutrient_types}
+            # st.dataframe(
+            #     display_df.style.format(format_dict),
+            #     hide_index=True,
+            #     use_container_width=True
+            # )
+
+            # New vertical display
+            # Extract the nutrient values as a Pandas Series
+            nutrient_values_series = predicted_df[nutrient_types].iloc[0]
+            
+            # Convert the Series to a DataFrame for vertical display
+            vertical_display_df = nutrient_values_series.reset_index()
+            vertical_display_df.columns = ['Nutrient', 'Predicted Value'] # Rename columns
+            
+            # Define formatting for the 'Predicted Value' column
+            format_dict_vertical = {'Predicted Value': '{:.2f}'}
             st.dataframe(
-                display_df.style.format(format_dict),
+                vertical_display_df.style.format(format_dict_vertical),
                 hide_index=True,
                 use_container_width=True
             )
