@@ -126,10 +126,18 @@ col1, col2 = st.columns(2)
 # Column 1: Nutrition Prediction
 with col1:
     st.header("Predict Nutrition Values")
+    similarity_threshold = st.slider(
+        "Similarity Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.7,
+        step=0.05,
+        help="Adjust the similarity threshold for dish name matching."
+    )
     user_dish_name = st.text_input("Enter the name of a dish:", key="custom_dish_input")
     
     if st.button("Find Nutrition", key="predict_button") and user_dish_name:
-        predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types, model)
+        predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types, model, similarity_threshold)
         st.info(message)
         if predicted_df is not None:
             # Original wide display (commented out or removed)
