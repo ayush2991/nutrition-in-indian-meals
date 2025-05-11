@@ -7,25 +7,44 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 import torch
 
-logging.basicConfig(level=logging.INFO)
+# Enhanced logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-logger.info("Starting the application")
+logger.info("Starting the Nutrition in Indian Meals application")
 
 # Load data
 @st.cache_data(ttl=timedelta(days=30))
 def load_data():
     try:
+        logger.info("Loading nutrition data from CSV")
         nutrition_data = pd.read_csv("./data/nutrition-values.csv")
-        logger.info("Data loaded successfully")
+        logger.info(f"Data loaded successfully with {len(nutrition_data)} dishes")
         return nutrition_data
-    except FileNotFoundError:
+    except FileNotFoundError as e:
+        logger.error(f"Data file not found: {e}")
         st.error("Data files not found. Please check the file paths.")
+        return None
+    except Exception as e:
+        logger.error(f"Error loading data: {e}")
+        st.error(f"An error occurred while loading data: {str(e)}")
         return None
 
 @st.cache_resource
 def load_model():
-    return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    try:
+        logger.info("Loading sentence transformer model")
+        model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        logger.info("Model loaded successfully")
+        return model
+    except Exception as e:
+        logger.error(f"Error loading model: {e}")
+        st.error("Failed to load the text similarity model")
+        return None
 
 st.set_page_config(
     page_title="Nutrition in Indian Meals",
@@ -35,9 +54,12 @@ st.set_page_config(
 
 st.title("Nutrition in Indian Meals")
 with st.spinner("Loading data..."):
+    logger.info("Initializing application data")
     nutrition_data = load_data()
     if nutrition_data is None:
+        logger.error("Failed to load nutrition data, stopping application")
         st.stop()
+    logger.info("Application data initialized successfully")
     with st.expander("Browse database", expanded=False):
         st.dataframe(nutrition_data, hide_index=True, height=800)
 
@@ -59,37 +81,47 @@ def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, similarit
     Uses sentence transformers for better semantic understanding.
     """
     if not dish_name_input.strip():
+        logger.warning("Empty dish name provided")
         return None, "Please enter a dish name."
 
     # Preprocess input: convert to lowercase, remove extra spaces
     clean_input = " ".join(dish_name_input.lower().strip().split())
+    logger.info(f"Processing query: '{clean_input}'")
     
-    # Create a list of dish names
-    dish_names = data["Dish Name"].unique().tolist()
-    
-    # Get embeddings for input and all dish names
-    model = load_model()
-    input_embedding = model.encode([clean_input], convert_to_tensor=True)
-    dish_embeddings = model.encode(dish_names, convert_to_tensor=True)
-    
-    # Calculate cosine similarities
-    similarities = torch.nn.functional.cosine_similarity(input_embedding, dish_embeddings)
-    best_match_idx = torch.argmax(similarities)
-    score = similarities[best_match_idx].item()
-    best_match = dish_names[best_match_idx]
-    
-    # Convert similarity score to percentage for display
-    score_percentage = int(score * 100)
+    try:
+        # Create a list of dish names
+        dish_names = data["Dish Name"].unique().tolist()
+        logger.debug(f"Comparing against {len(dish_names)} unique dishes")
+        
+        # Get embeddings for input and all dish names
+        model = load_model()
+        if model is None:
+            return None, "Unable to process request due to model loading error"
+            
+        input_embedding = model.encode([clean_input], convert_to_tensor=True)
+        dish_embeddings = model.encode(dish_names, convert_to_tensor=True)
+        
+        # Calculate cosine similarities
+        similarities = torch.nn.functional.cosine_similarity(input_embedding, dish_embeddings)
+        best_match_idx = torch.argmax(similarities)
+        score = similarities[best_match_idx].item()
+        best_match = dish_names[best_match_idx]
+        
+        # Convert similarity score to percentage for display
+        score_percentage = int(score * 100)
 
-    if score >= similarity_threshold:
-        logger.info(f"Found match '{best_match}' for '{dish_name_input}' with score {score_percentage}%.")
-        predicted_values = data[data["Dish Name"] == best_match][_nutrient_cols].iloc[0]
-        prediction_df = pd.DataFrame([predicted_values])
-        prediction_df.insert(0, "Dish Name (Predicted)", f"{dish_name_input} (similar to: {best_match})")
-        return prediction_df, f"Prediction based on the closest match: '{best_match}' (Similarity: {score_percentage}%)"
-    else:
-        logger.info(f"No confident match found for '{dish_name_input}'. Best attempt: '{best_match}' with score {score_percentage}%.")
-        return None, f"Could not find a confident match for '{dish_name_input}'. Best guess was '{best_match}' (Similarity: {score_percentage}%), but it's below the threshold of {int(similarity_threshold * 100)}%."
+        if score >= similarity_threshold:
+            logger.info(f"Found match '{best_match}' for '{dish_name_input}' with score {score_percentage}%")
+            predicted_values = data[data["Dish Name"] == best_match][_nutrient_cols].iloc[0]
+            prediction_df = pd.DataFrame([predicted_values])
+            prediction_df.insert(0, "Dish Name (Predicted)", f"{dish_name_input} (similar to: {best_match})")
+            return prediction_df, f"Prediction based on the closest match: '{best_match}' (Similarity: {score_percentage}%)"
+        else:
+            logger.warning(f"No confident match found for '{dish_name_input}'. Best attempt: '{best_match}' with score {score_percentage}%")
+            return None, f"Could not find a confident match for '{dish_name_input}'. Best guess was '{best_match}' (Similarity: {score_percentage}%), but it's below the threshold of {int(similarity_threshold * 100)}%."
+    except Exception as e:
+        logger.error(f"Error during prediction: {e}")
+        return None, f"An error occurred while processing your request: {str(e)}"
 
 if st.button("Find Nutrition", key="predict_button") and user_dish_name:
     predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types)
