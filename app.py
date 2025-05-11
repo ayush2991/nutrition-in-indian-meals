@@ -3,7 +3,9 @@ from datetime import timedelta
 import pandas as pd
 import altair as alt
 import logging
-from thefuzz import process, fuzz # For string matching
+import numpy as np
+from sentence_transformers import SentenceTransformer
+import torch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,6 +22,10 @@ def load_data():
     except FileNotFoundError:
         st.error("Data files not found. Please check the file paths.")
         return None
+
+@st.cache_resource
+def load_model():
+    return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
 st.set_page_config(
     page_title="Nutrition in Indian Meals",
@@ -46,11 +52,11 @@ average_nutrition = pd.DataFrame({
 user_dish_name = st.text_input("Enter the name of a dish to predict its nutrition:", key="custom_dish_input")
 
 # --- Section for Free Text Dish Name Prediction ---
-@st.cache_data(ttl=timedelta(hours=1)) # Cache predictions for a while
-def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, similarity_threshold=70):
+@st.cache_data(ttl=timedelta(hours=1))
+def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, similarity_threshold=0.7):
     """
-    Predicts nutrition for a given dish name by finding the closest match in the dataset.
-    Uses fuzzy string matching with preprocessing for better accuracy.
+    Predicts nutrition for a given dish name by finding the closest match using semantic similarity.
+    Uses sentence transformers for better semantic understanding.
     """
     if not dish_name_input.strip():
         return None, "Please enter a dish name."
@@ -61,27 +67,29 @@ def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, similarit
     # Create a list of dish names
     dish_names = data["Dish Name"].unique().tolist()
     
-    # Find the best match using token sort ratio for better word order handling
-    match_result = process.extractOne(
-        clean_input,
-        dish_names,
-        scorer=fuzz.token_sort_ratio
-    )
+    # Get embeddings for input and all dish names
+    model = load_model()
+    input_embedding = model.encode([clean_input], convert_to_tensor=True)
+    dish_embeddings = model.encode(dish_names, convert_to_tensor=True)
     
-    if match_result is None:
-        return None, "Could not find any matches for the dish name."
-        
-    best_match, score = match_result
+    # Calculate cosine similarities
+    similarities = torch.nn.functional.cosine_similarity(input_embedding, dish_embeddings)
+    best_match_idx = torch.argmax(similarities)
+    score = similarities[best_match_idx].item()
+    best_match = dish_names[best_match_idx]
+    
+    # Convert similarity score to percentage for display
+    score_percentage = int(score * 100)
 
     if score >= similarity_threshold:
-        logger.info(f"Found match '{best_match}' for '{dish_name_input}' with score {score}.")
+        logger.info(f"Found match '{best_match}' for '{dish_name_input}' with score {score_percentage}%.")
         predicted_values = data[data["Dish Name"] == best_match][_nutrient_cols].iloc[0]
         prediction_df = pd.DataFrame([predicted_values])
         prediction_df.insert(0, "Dish Name (Predicted)", f"{dish_name_input} (similar to: {best_match})")
-        return prediction_df, f"Prediction based on the closest match: '{best_match}' (Similarity: {score}%)"
+        return prediction_df, f"Prediction based on the closest match: '{best_match}' (Similarity: {score_percentage}%)"
     else:
-        logger.info(f"No confident match found for '{dish_name_input}'. Best attempt: '{best_match}' with score {score}.")
-        return None, f"Could not find a confident match for '{dish_name_input}'. Best guess was '{best_match}' (Similarity: {score}%), but it's below the threshold of {similarity_threshold}%."
+        logger.info(f"No confident match found for '{dish_name_input}'. Best attempt: '{best_match}' with score {score_percentage}%.")
+        return None, f"Could not find a confident match for '{dish_name_input}'. Best guess was '{best_match}' (Similarity: {score_percentage}%), but it's below the threshold of {int(similarity_threshold * 100)}%."
 
 if st.button("Find Nutrition", key="predict_button") and user_dish_name:
     predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types)
