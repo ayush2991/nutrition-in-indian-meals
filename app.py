@@ -103,6 +103,9 @@ if model is None:
     st.stop()
 
 st.title("Nutrition in Indian Meals")
+st.write("This app provides nutritional information about various Indian meals. You can predict the nutrition values of a dish by entering its name and compare it with other dishes.")
+st.write("The dataset was sourced from Anuvaad Indian Nutrient Database (INDB) (https://www.anuvaad.org.in/methodology/).")
+
 with st.spinner("Loading data..."):
     logger.info("Initializing application data")
     nutrition_data = load_data()
