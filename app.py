@@ -52,6 +52,12 @@ st.set_page_config(
     layout="wide",
 )
 
+# Load model at startup
+model = load_model()
+if model is None:
+    st.error("Failed to load the text similarity model. The application may not work correctly.")
+    st.stop()
+
 st.title("Nutrition in Indian Meals")
 with st.spinner("Loading data..."):
     logger.info("Initializing application data")
@@ -75,7 +81,7 @@ user_dish_name = st.text_input("Enter the name of a dish to predict its nutritio
 
 # --- Section for Free Text Dish Name Prediction ---
 @st.cache_data(ttl=timedelta(hours=1))
-def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, similarity_threshold=0.7):
+def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, _model, similarity_threshold=0.7):
     """
     Predicts nutrition for a given dish name by finding the closest match using semantic similarity.
     Uses sentence transformers for better semantic understanding.
@@ -93,13 +99,8 @@ def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, similarit
         dish_names = data["Dish Name"].unique().tolist()
         logger.debug(f"Comparing against {len(dish_names)} unique dishes")
         
-        # Get embeddings for input and all dish names
-        model = load_model()
-        if model is None:
-            return None, "Unable to process request due to model loading error"
-            
-        input_embedding = model.encode([clean_input], convert_to_tensor=True)
-        dish_embeddings = model.encode(dish_names, convert_to_tensor=True)
+        input_embedding = _model.encode([clean_input], convert_to_tensor=True)
+        dish_embeddings = _model.encode(dish_names, convert_to_tensor=True)
         
         # Calculate cosine similarities
         similarities = torch.nn.functional.cosine_similarity(input_embedding, dish_embeddings)
@@ -124,7 +125,7 @@ def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, similarit
         return None, f"An error occurred while processing your request: {str(e)}"
 
 if st.button("Find Nutrition", key="predict_button") and user_dish_name:
-    predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types)
+    predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types, model)
     st.info(message)
     if predicted_df is not None:
         # Display the predicted nutrition values, formatted
