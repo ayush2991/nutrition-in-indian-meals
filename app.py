@@ -183,7 +183,7 @@ with col2:
             comparison_df[f'{meal_name_2}'] = meal_data_2[nutrient_types].values[0]
         
         # Display the comparison
-        st.subheader("Nutrition Values Comparison")
+        st.subheader("Nutrition Values Comparison (per 100g)")
         st.dataframe(
             comparison_df.style.format({
                 f'{meal_name}': '{:.2f}',
