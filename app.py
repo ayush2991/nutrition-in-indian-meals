@@ -46,40 +46,6 @@ def load_model():
         st.error("Failed to load the text similarity model")
         return None
 
-st.set_page_config(
-    page_title="Nutrition in Indian Meals",
-    page_icon="🍽️",
-    layout="wide",
-)
-
-# Load model at startup
-model = load_model()
-if model is None:
-    st.error("Failed to load the text similarity model. The application may not work correctly.")
-    st.stop()
-
-st.title("Nutrition in Indian Meals")
-with st.spinner("Loading data..."):
-    logger.info("Initializing application data")
-    nutrition_data = load_data()
-    if nutrition_data is None:
-        logger.error("Failed to load nutrition data, stopping application")
-        st.stop()
-    logger.info("Application data initialized successfully")
-    with st.expander("Browse database", expanded=False):
-        st.dataframe(nutrition_data, hide_index=True, height=800)
-
-# Calculate average nutrition values
-nutrient_types = nutrition_data.columns[1:]
-average_nutrition = pd.DataFrame({
-    'Dish Name': ['Average'],
-    **{col: [nutrition_data[col].mean()] for col in nutrient_types}
-})
-
-# Text input for dish name prediction
-user_dish_name = st.text_input("Enter the name of a dish to predict its nutrition:", key="custom_dish_input")
-
-# --- Section for Free Text Dish Name Prediction ---
 @st.cache_data(ttl=timedelta(hours=1))
 def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, _model, similarity_threshold=0.7):
     """
@@ -124,101 +90,137 @@ def predict_nutrition_from_text(dish_name_input, data, _nutrient_cols, _model, s
         logger.error(f"Error during prediction: {e}")
         return None, f"An error occurred while processing your request: {str(e)}"
 
-if st.button("Find Nutrition", key="predict_button") and user_dish_name:
-    predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types, model)
-    st.info(message)
-    if predicted_df is not None:
-        # Display the predicted nutrition values, formatted
-        display_df = predicted_df.copy()
-        format_dict = {col: '{:.2f}' for col in nutrient_types}
-        st.dataframe(
-            display_df.style.format(format_dict),
-            hide_index=True,
-            use_container_width=True
-        )
+st.set_page_config(
+    page_title="Nutrition in Indian Meals",
+    page_icon="🍽️",
+    layout="wide",
+)
 
-# After the nutrition prediction section
-with st.sidebar:
+# Load model at startup
+model = load_model()
+if model is None:
+    st.error("Failed to load the text similarity model. The application may not work correctly.")
+    st.stop()
+
+st.title("Nutrition in Indian Meals")
+with st.spinner("Loading data..."):
+    logger.info("Initializing application data")
+    nutrition_data = load_data()
+    if nutrition_data is None:
+        logger.error("Failed to load nutrition data, stopping application")
+        st.stop()
+    logger.info("Application data initialized successfully")
+    with st.expander("Browse database", expanded=False):
+        st.dataframe(nutrition_data, hide_index=True, height=800)
+
+# Calculate average nutrition values
+nutrient_types = nutrition_data.columns[1:]
+average_nutrition = pd.DataFrame({
+    'Dish Name': ['Average'],
+    **{col: [nutrition_data[col].mean()] for col in nutrient_types}
+})
+
+# Create two columns for the main layout
+col1, col2 = st.columns(2)
+
+# Column 1: Nutrition Prediction
+with col1:
+    st.header("Predict Nutrition Values")
+    user_dish_name = st.text_input("Enter the name of a dish:", key="custom_dish_input")
+    
+    if st.button("Find Nutrition", key="predict_button") and user_dish_name:
+        predicted_df, message = predict_nutrition_from_text(user_dish_name, nutrition_data, nutrient_types, model)
+        st.info(message)
+        if predicted_df is not None:
+            display_df = predicted_df.copy()
+            format_dict = {col: '{:.2f}' for col in nutrient_types}
+            st.dataframe(
+                display_df.style.format(format_dict),
+                hide_index=True,
+                use_container_width=True
+            )
+
+# Column 2: Dish Comparison
+with col2:
     st.header("Compare Dishes")
-    # Add meal selection dropdowns
     meal_name = st.selectbox("Select first dish:", options=nutrition_data["Dish Name"].unique(), key="meal_1")
     meal_name_2 = st.selectbox("Select second dish (optional):", 
-                              options=["None"] + nutrition_data["Dish Name"].unique().tolist(),
-                              key="meal_2")
+                            options=["None"] + nutrition_data["Dish Name"].unique().tolist(),
+                            key="meal_2")
     
     # Convert "None" to None for proper handling
     meal_name_2 = None if meal_name_2 == "None" else meal_name_2
 
-if meal_name:
-    # Get selected meal data
-    meal_data = nutrition_data[nutrition_data["Dish Name"] == meal_name].copy()
+    if meal_name:
+        # Get selected meal data
+        meal_data = nutrition_data[nutrition_data["Dish Name"] == meal_name].copy()
 
-    # Create comparison DataFrame
-    comparison_df = pd.DataFrame({
-        'Nutrient': nutrient_types,
-        f'{meal_name}': meal_data[nutrient_types].values[0],
-        'Average': [nutrition_data[col].mean() for col in nutrient_types]
-    })
-    if meal_name_2 and meal_name_2 != meal_name: # Add second meal if selected and different
-        meal_data_2 = nutrition_data[nutrition_data["Dish Name"] == meal_name_2].copy()
-        comparison_df[f'{meal_name_2}'] = meal_data_2[nutrient_types].values[0]
-    
-    # Display the comparison
-    st.subheader("Nutrition Values Comparison")
-    st.dataframe(
-        comparison_df.style.format({
-            f'{meal_name}': '{:.2f}',
-            f'{meal_name_2}': '{:.2f}',
-            'Average': '{:.2f}',
-        }),
-        hide_index=True,
-        use_container_width=True
-    )
-    
-    # Calculate normalized values for both meals
-    for nutrient in nutrient_types:
-        avg_value = nutrition_data[nutrient].mean()
-        meal_data[nutrient] = meal_data[nutrient] / avg_value
+        # Create comparison DataFrame
+        comparison_df = pd.DataFrame({
+            'Nutrient': nutrient_types,
+            f'{meal_name}': meal_data[nutrient_types].values[0],
+            'Average': [nutrition_data[col].mean() for col in nutrient_types]
+        })
+        if meal_name_2 and meal_name_2 != meal_name:  # Add second meal if selected and different
+            meal_data_2 = nutrition_data[nutrition_data["Dish Name"] == meal_name_2].copy()
+            comparison_df[f'{meal_name_2}'] = meal_data_2[nutrient_types].values[0]
+        
+        # Display the comparison
+        st.subheader("Nutrition Values Comparison")
+        st.dataframe(
+            comparison_df.style.format({
+                f'{meal_name}': '{:.2f}',
+                f'{meal_name_2}': '{:.2f}' if meal_name_2 else None,
+                'Average': '{:.2f}',
+            }),
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        # Calculate normalized values for both meals
+        for nutrient in nutrient_types:
+            avg_value = nutrition_data[nutrient].mean()
+            meal_data[nutrient] = meal_data[nutrient] / avg_value
+            if meal_name_2 and meal_name_2 != meal_name and 'meal_data_2' in locals():
+                meal_data_2[nutrient] = meal_data_2[nutrient] / avg_value
+        
+        # Create bar chart data for both meals
+        melted_meal1 = meal_data.melt(id_vars=['Dish Name'], var_name='Nutrient', value_name='Value').assign(Meal=meal_name)
+        
         if meal_name_2 and meal_name_2 != meal_name and 'meal_data_2' in locals():
-             meal_data_2[nutrient] = meal_data_2[nutrient] / avg_value
-    
-    # Create bar chart data for both meals
-    melted_meal1 = meal_data.melt(id_vars=['Dish Name'], var_name='Nutrient', value_name='Value').assign(Meal=meal_name)
-    
-    if meal_name_2 and meal_name_2 != meal_name and 'meal_data_2' in locals():
-        melted_meal2 = meal_data_2.melt(id_vars=['Dish Name'], var_name='Nutrient', value_name='Value').assign(Meal=meal_name_2)
-        chart_data = pd.concat([melted_meal1, melted_meal2])
-    else:
-        chart_data = melted_meal1
-    
-    # Create bar chart
-    chart = alt.Chart(chart_data).mark_bar().encode(
-        x=alt.X('Nutrient:N', title='Nutrient'),
-        y=alt.Y('Value:Q', 
-                title='Value (Relative to Average)',
-                axis=alt.Axis(format='%')),
-        color=alt.Color('Meal:N', title='Meal'),
-        tooltip=['Nutrient', 'Meal', alt.Tooltip('Value:Q', format='.2%')]
-    )
-    if meal_name_2 and meal_name_2 != meal_name: # Apply xOffset only if comparing two meals
-        chart = chart.encode(xOffset='Meal:N')
+            melted_meal2 = meal_data_2.melt(id_vars=['Dish Name'], var_name='Nutrient', value_name='Value').assign(Meal=meal_name_2)
+            chart_data = pd.concat([melted_meal1, melted_meal2])
+        else:
+            chart_data = melted_meal1
+        
+        # Create bar chart
+        chart = alt.Chart(chart_data).mark_bar().encode(
+            x=alt.X('Nutrient:N', title='Nutrient'),
+            y=alt.Y('Value:Q', 
+                    title='Value (Relative to Average)',
+                    axis=alt.Axis(format='%')),
+            color=alt.Color('Meal:N', title='Meal'),
+            tooltip=['Nutrient', 'Meal', alt.Tooltip('Value:Q', format='.2%')]
+        )
+        if meal_name_2 and meal_name_2 != meal_name:  # Apply xOffset only if comparing two meals
+            chart = chart.encode(xOffset='Meal:N')
 
-    chart = chart.properties(
-        title='Nutrient Content Relative to Average',
-        width=800,
-        height=400
-    )
-    
-    # Add a reference line at 1.0 (100%)
-    reference_line = alt.Chart(pd.DataFrame({'y': [1]})).mark_rule(
-        strokeDash=[2, 2],
-        color='gray'
-    ).encode(y='y:Q')
-    
-    # Combine chart with reference line
-    final_chart = (chart + reference_line)
-    
-    st.altair_chart(final_chart, use_container_width=True)
-    
-    # Add explanation
-    st.caption("Bars indicate nutrient content relative to average. The dashed line represents the average (100%).")
+        chart = chart.properties(
+            title='Nutrient Content Relative to Average',
+            width=800,
+            height=400
+        )
+        
+        # Add a reference line at 1.0 (100%)
+        reference_line = alt.Chart(pd.DataFrame({'y': [1]})).mark_rule(
+            strokeDash=[2, 2],
+            color='gray'
+        ).encode(y='y:Q')
+        
+        # Combine chart with reference line
+        final_chart = (chart + reference_line)
+        
+        st.altair_chart(final_chart, use_container_width=True)
+        
+        # Add explanation
+        st.caption("Bars indicate nutrient content relative to average. The dashed line represents the average (100%).")
