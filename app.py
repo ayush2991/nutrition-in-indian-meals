@@ -160,10 +160,10 @@ with col1:
 # Column 2: Dish Comparison
 with col2:
     st.header("Compare Dishes")
-    meal_name = st.selectbox("Select first dish:", options=nutrition_data["Dish Name"].unique(), key="meal_1")
+    meal_name = st.selectbox("Select first dish:", options=nutrition_data["Dish Name"].unique(), key="meal_1", index=107)
     meal_name_2 = st.selectbox("Select second dish (optional):", 
                             options=["None"] + nutrition_data["Dish Name"].unique().tolist(),
-                            key="meal_2")
+                            key="meal_2", index=109)
     
     # Convert "None" to None for proper handling
     meal_name_2 = None if meal_name_2 == "None" else meal_name_2
